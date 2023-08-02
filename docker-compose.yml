@@ -1,0 +1,85 @@
+version: "3.3"
+services:
+  traefik:
+    image: "traefik:v2.2"
+    container_name: traefik
+    hostname: traefik
+    command:
+      - --entrypoints.web.address=:80
+      - --entrypoints.websecure.address=:443
+      - --providers.docker
+      - --providers.docker.exposedByDefault=false
+      - --api
+      - --certificatesresolvers.le.acme.email=${TRAEFIK_SSLEMAIL?Variable not set}
+      - --certificatesresolvers.le.acme.storage=./acme.json
+      - --certificatesresolvers.le.acme.caServer=https://acme-staging-v02.api.letsencrypt.org/directory
+      - --certificatesresolvers.le.acme.tlschallenge=true
+      - --providers.docker.watch=true
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - "/var/run/docker.sock:/var/run/docker.sock:ro"
+      - "./acme.json:/acme.json"
+    labels:
+      - "traefik.enable=true"
+      # Dashboard
+      - "traefik.http.routers.traefik.rule=Host(`${PRIMARY_DOMAIN}`) && (PathPrefix(`/dashboard`) || PathPrefix(`/api`))"
+      - "traefik.http.routers.traefik.service=api@internal"
+      - "traefik.http.routers.traefik.tls.certresolver=le"
+      - "traefik.http.routers.traefik.tls=true"
+      - "traefik.http.routers.traefik.entrypoints=websecure"
+      - "traefik.http.routers.traefik.middlewares=authtraefik"
+      - "traefik.http.middlewares.authtraefik.basicauth.users=devAdmin:$$2y$$05$$h9OxLeY20/5uiXjfPgdRxuFlrfqBf2QifYDgrwsR6rAEgX3/dpOGq"
+      - "traefik.http.routers.http-catchall.rule=hostregexp(`{host:.+}`)"
+      - "traefik.http.routers.http-catchall.entrypoints=web"
+      - "traefik.http.routers.http-catchall.middlewares=redirect-to-https"
+      # middleware redirect
+      - "traefik.http.middlewares.redirect-to-https.redirectscheme.scheme=https"
+    restart: unless-stopped
+    networks:
+      - traefik-public
+      - app-network
+  db:
+    image: postgres
+    volumes:
+      - weather-db:/var/lib/postgresql/data
+    environment:
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD?Variable not set}
+    restart: "${DOCKER_RESTART_POLICY:-unless-stopped}"
+    stop_grace_period: 30s
+    networks:
+      - app-network
+  mosquitto:
+    build: 
+      context: .
+      dockerfile: Dockerfile.mosquitto
+    container_name: mosquitto
+    volumes:
+      - mosquitto-data:/mosquitto/data
+    ports:
+      - "1883:1883"
+      - "9001:9001"
+    restart: "${DOCKER_RESTART_POLICY:-unless-stopped}"
+    networks:
+      - app-network
+      - traefik-public
+  dashboard:
+    build: 
+      context: .
+      dockerfile: Dockerfile.dashboard
+    container_name: dashboard
+    volumes:
+      - dashboard-data:/dashboard/data
+    ports:
+      - "8080:8080"
+    restart: "${DOCKER_RESTART_POLICY:-unless-stopped}"
+    networks:
+      - app-network
+      - traefik-public
+
+networks:
+  traefik-public:
+    external: true
+  app-network:
+    driver: bridge
