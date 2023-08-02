@@ -40,6 +40,7 @@ services:
     networks:
       - traefik-public
       - app-network
+
   db:
     image: postgres
     volumes:
@@ -50,6 +51,7 @@ services:
     stop_grace_period: 30s
     networks:
       - app-network
+
   mosquitto:
     build: 
       context: .
@@ -64,16 +66,15 @@ services:
     networks:
       - app-network
       - traefik-public
-  dashboard:
-    build: 
-      context: .
-      dockerfile: Dockerfile.dashboard
-    container_name: dashboard
+
+  grafana:
+    image: grafana/grafana-oss
+    container_name: grafana
     volumes:
       - dashboard-data:/dashboard/data
-    ports:
-      - "8080:8080"
     restart: "${DOCKER_RESTART_POLICY:-unless-stopped}"
+    ports:
+      - '3000:3000'
     networks:
       - app-network
       - traefik-public
